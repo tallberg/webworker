@@ -48,23 +48,75 @@ class Feeder {
     reset = () => this._current = 0;
 }
 
+class WorkerManager {
+    _jobName;
+    _generator;
+    _onMessage;
+    _instances = [];
+    _halt = false;
+    /**
+     * @param {string} job Path to worker script
+     * @param {number} instances Number of workers to instanciate
+     * @param {any} generator Object or generator with a "next" function to seed the workers
+     * @param {function} onMessageFunction Function to handle worker responses. If returns true all workers will terminate. If false, worker will be called with generator.next().
+     * @param {bool} startOnCreate Should workers start directly?
+     */
+    constructor(job, instances = 1, generator, onMessageFunction, startOnCreate = false) {
+        this._job = job;
+        this._generator = generator;
+        this._onMessage = onMessageFunction;
+        this.spawn(instances, startOnCreate);        
+    }
+    spawn = (instances, post = true) => {
+        console.log('spawn', instances, post);
+        while (instances-- > 0) {
+            const worker = this._instances[this._instances.push(new Worker(this._job)) - 1];
+            worker.onmessage = (response) => {
+                if(this._onMessage(response) || this._halt) {
+                    this._halt = true;
+                    worker.terminate();
+                } else {
+                    worker.postMessage(this._generator.next());
+                }
+            };
+            if(post) {
+                console.log('workwork',worker);
+                worker.postMessage(this._generator.next());
+            }
+        }
+    }
+    post = () => {
+        for(let instance of this._instances) {
+            instance.postMessage(this._generator.next())
+        }
+    }
+    halt = () => {
+        this._halt = true;
+    }
+}
+
+
 // const target = '2804890A4B43E24D922447DDAAAD3B2A'; //FFF
-// const target = '722A5443E3B3EE1B5DA271AE9F477F10'; //FFFF
-const target = '5A554D4B4CC04DFED2311CFE2AA544B2'; //FFFFF
-let found = false;
+const target = '722A5443E3B3EE1B5DA271AE9F477F10'; //FFFF
+// const target = '5A554D4B4CC04DFED2311CFE2AA544B2'; //FFFFF
+
+function testResult(data) {
+    const result = data[1];
+    if(result !== target) { 
+	    return false;
+	}
+	const endTime = new Date
+	const plaintext = data[0];
+	out.innerHTML = `<h3>${plaintext}</h3><p>${msToString(endTime - startTime)}</p>`;
+	clearInterval(progressInterval);
+	return true;
+}
 
 //const feeder = new Feeder('0123456789ABCDEF');
 const feeder = new Feeder('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz');
-const ww1 = new Worker('worker.js');
-const ww2 = new Worker('worker.js');
-const ww3 = new Worker('worker.js');
-const ww4 = new Worker('worker.js');
-
+const onMessage = response => testResult(response.data);
+const workerManager = new WorkerManager('worker.js', 4, feeder, onMessage, true);
 const startTime = new Date;
-ww1.postMessage(feeder.next());
-ww2.postMessage(feeder.next());
-ww3.postMessage(feeder.next());
-ww4.postMessage(feeder.next());
 
 let lastVal = 0;
 let progressInterval = setInterval(function(){
@@ -74,30 +126,18 @@ let progressInterval = setInterval(function(){
     lastVal = prog.current;
 }, 500);
 
-testResult = function(data) {
-    let result = data[1];
-    if(result !== target) { 
-	    return false;
-	}
-	const endTime = new Date
-	found = true;
-	let plaintext = data[0];
-	out.innerHTML = `<h3>${plaintext.join ? plaintext.join('') : plaintext}</h3><p>${endTime - startTime}ms</p>`;
-	clearInterval(progressInterval);
-	return true;
+
+function msToString(ms) {
+  if (!ms) return '0';
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 1000 * 60) return `${Math.floor(ms / 1000)}.${ms % 1000} s`; 
+  const addZero = (value) => (value < 10 ? `0${value}` : value);
+  const hours = addZero(Math.floor(ms / (1000 * 60 * 60)));
+  const minutes = addZero(Math.floor((ms / (1000 * 60)) % 60));
+  const seconds = addZero(Math.floor((ms / 1000) % 60));
+  ms = ms % 1000;
+  return `${hours}:${minutes}:${seconds}.${ms}`;
 }
 
-ww1.onmessage = function(e) {
-    testResult(e.data) || found ? ww1.terminate() : ww1.postMessage(feeder.next());
-}
-ww2.onmessage = function(e) {
-    testResult(e.data) || found ? ww2.terminate() : ww2.postMessage(feeder.next());
-}
-ww3.onmessage = function(e) {
-    testResult(e.data) || found ? ww3.terminate() : ww3.postMessage(feeder.next());
-}
-ww4.onmessage = function(e) {
-    testResult(e.data) || found ? ww4.terminate() : ww4.postMessage(feeder.next());
-}
 
 </script>
